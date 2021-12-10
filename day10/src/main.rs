@@ -1,7 +1,8 @@
-use anyhow::{bail, Error, Result};
+use anyhow::{anyhow, bail, Error, Result};
+use itertools::Itertools;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Token {
+pub enum BracketMeaning {
     Opened(Bracket),
     Closed(Bracket),
 }
@@ -10,8 +11,8 @@ pub enum Token {
 pub enum Bracket {
     Parentheses,
     Square,
-    Angle,
     Curly,
+    Angle,
 }
 
 impl Bracket {
@@ -34,19 +35,19 @@ impl Bracket {
     }
 }
 
-impl TryFrom<char> for Token {
+impl TryFrom<char> for BracketMeaning {
     type Error = Error;
 
     fn try_from(c: char) -> Result<Self> {
         let bracket = match c {
-            '(' => Token::Opened(Bracket::Parentheses),
-            ')' => Token::Closed(Bracket::Parentheses),
-            '[' => Token::Opened(Bracket::Square),
-            ']' => Token::Closed(Bracket::Square),
-            '<' => Token::Opened(Bracket::Angle),
-            '>' => Token::Closed(Bracket::Angle),
-            '{' => Token::Opened(Bracket::Curly),
-            '}' => Token::Closed(Bracket::Curly),
+            '(' => BracketMeaning::Opened(Bracket::Parentheses),
+            ')' => BracketMeaning::Closed(Bracket::Parentheses),
+            '[' => BracketMeaning::Opened(Bracket::Square),
+            ']' => BracketMeaning::Closed(Bracket::Square),
+            '<' => BracketMeaning::Opened(Bracket::Angle),
+            '>' => BracketMeaning::Closed(Bracket::Angle),
+            '{' => BracketMeaning::Opened(Bracket::Curly),
+            '}' => BracketMeaning::Closed(Bracket::Curly),
             _ => bail!("unknown char"),
         };
 
@@ -54,82 +55,83 @@ impl TryFrom<char> for Token {
     }
 }
 
-fn parse_line(line: &str) -> Result<(usize, Vec<Token>)> {
-    let mut token_list = Vec::<Token>::new();
+fn parse_line(line: String) -> Result<(usize, Vec<Bracket>)> {
+    let mut bracket_list = Vec::<Bracket>::new();
     let mut error = 0;
 
-    for c in line.trim().chars() {
-        let token = Token::try_from(c)?;
-        let last = token_list.last();
+    for c in line.chars() {
+        let token = BracketMeaning::try_from(c)?;
+        let last = bracket_list.last();
 
         match (last, token) {
-            (None, Token::Closed(b)) => {
-                error = b.error_score();
-                break;
-            }
-            (_, Token::Opened(_)) => token_list.push(token),
-            (Some(Token::Opened(last)), Token::Closed(b)) => {
+            (None, BracketMeaning::Closed(b)) => error = b.error_score(),
+            (_, BracketMeaning::Opened(b)) => bracket_list.push(b),
+            (Some(last), BracketMeaning::Closed(b)) => {
                 if b == *last {
-                    token_list.pop();
+                    bracket_list.pop();
                 } else {
                     error = b.error_score();
-                    break;
                 }
             }
-            (Some(Token::Closed(_)), Token::Closed(b)) => {
-                error = b.error_score();
-                break;
-            }
+        }
+
+        if error != 0 {
+            break;
         }
     }
 
-    Ok((error, token_list))
+    Ok((error, bracket_list))
 }
 
-fn complete_line(line: &mut Vec<Token>) -> Result<usize> {
-    let mut score: usize = 0;
+fn complete_line_score(line: Vec<Bracket>) -> usize {
+    line.into_iter()
+        .rev()
+        .fold(0, |acc, b| acc * 5 + b.complete_score())
+}
 
-    while let Some(t) = line.pop() {
-        match t {
-            Token::Opened(b) => {
-                score = score * 5 + b.complete_score();
-            }
-            Token::Closed(_) => bail!("closed token found"),
-        }
+pub trait Median: Iterator {
+    /// Calculate median
+    fn median(self) -> Option<Self::Item>
+    where
+        Self: Sized,
+        Self::Item: Ord + Clone,
+    {
+        let v: Vec<_> = self.into_iter().sorted().collect();
+        let median_index = v.len() / 2;
+
+        v.get(median_index).cloned()
     }
-
-    Ok(score)
 }
+
+impl<I: Iterator> Median for I {}
 
 fn main() -> Result<()> {
     let input: Vec<String> = std::fs::read_to_string("input.txt")?
         .lines()
-        .map(|s| s.to_owned())
+        .map(|s| s.trim().to_owned())
         .collect();
 
-    let parsed_input: Vec<(usize, Vec<Token>)> = input
+    let parsed_input = input
         .into_iter()
-        .map(|l| parse_line(&l))
+        .map(parse_line)
         .collect::<Result<Vec<_>>>()?;
 
     let total_error_score: usize = parsed_input.iter().map(|(e, _)| e).sum();
     println!("Total Error Score: {}", total_error_score);
 
-    let mut incomplete_input: Vec<Vec<Token>> = parsed_input
+    let incomplete_input: Vec<_> = parsed_input
         .into_iter()
         .filter(|(e, _)| *e == 0)
         .map(|(_, l)| l)
         .collect();
 
-    let mut complete_scores: Vec<usize> = incomplete_input
-        .iter_mut()
-        .map(|l| complete_line(l))
-        .collect::<Result<Vec<_>>>()?;
+    let middle_completion_score = incomplete_input
+        .into_iter()
+        .map(complete_line_score)
+        .median()
+        .ok_or(anyhow!("Middle Completion Score not found"))?;
 
-    complete_scores.sort();
-    let middle_completion_score = complete_scores[complete_scores.len() / 2];
-
-    println!("Middle Completion Score: {}", middle_completion_score);
+    println!("Middle Completion Score: {:?}", middle_completion_score);
 
     Ok(())
 }
