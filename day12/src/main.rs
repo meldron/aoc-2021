@@ -117,14 +117,12 @@ impl CaveNetwork {
 
                 let visited_filter: Box<dyn Fn(&Cave) -> bool> =
                     match single_small_cave_can_be_visited_twice {
-                        true => Box::new(|to_check: &Cave| -> bool {
+                        true => Box::new(|to_check| {
                             !matches!(to_check, Cave::Small(_))
                                 || !small_caves_visited.contains_key(to_check)
                                 || no_small_cave_visited_twice
                         }),
-                        false => Box::new(|to_check: &Cave| -> bool {
-                            !small_caves_visited.contains_key(to_check)
-                        }),
+                        false => Box::new(|to_check| !small_caves_visited.contains_key(to_check)),
                     };
 
                 let connections = self
