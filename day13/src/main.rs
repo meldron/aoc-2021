@@ -91,9 +91,8 @@ fn fold_paper(paper: &Paper, instruction: Instruction) -> Paper {
 }
 
 fn split_input(input: &str) -> Result<(Paper, Vec<Instruction>)> {
-    let (paper_raw, instructions_raw) = input
-        .split_once("\n\n")
-        .ok_or(anyhow!("input malformated"))?;
+    let (paper_raw, instructions_raw) =
+        input.split_once("\n\n").ok_or(anyhow!("input malformed"))?;
 
     let paper = load_paper(&paper_raw)?;
     let instructions = instructions_raw
